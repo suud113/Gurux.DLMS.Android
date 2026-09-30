@@ -1,5 +1,6 @@
 // This file is a part of Gurux Device Framework (GPL v2).
-// Modified: safe error handling + on-screen crash report.
+// Modified: safe error handling, on-screen crash report,
+// and fallback download of manufacturer settings (plain GET).
 
 package gurux.dlms.android;
 
@@ -10,12 +11,18 @@ import android.util.Log;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import gurux.dlms.GXDLMSConverter;
 import gurux.dlms.manufacturersettings.GXManufacturerCollection;
@@ -23,6 +30,7 @@ import gurux.dlms.manufacturersettings.GXManufacturerCollection;
 public class GXSplashScreen extends Activity {
 
     private static final String CRASH_FILE = "last_crash.txt";
+    private static final String BASE = "https://www.gurux.fi/obis/";
     private TextView loading;
 
     @Override
@@ -84,10 +92,67 @@ public class GXSplashScreen extends Activity {
             } catch (Exception e) {
                 Log.e("gurux.dlms", "Failed to read manufacturer settings from the server.", e);
             }
+            if (!hasManufacturerFiles()) {
+                try {
+                    downloadManufacturers();
+                } catch (Exception e) {
+                    Log.e("gurux.dlms", "Fallback download failed.", e);
+                }
+            }
             Intent i = new Intent(GXSplashScreen.this, MainActivity.class);
             startActivity(i);
             finish();
         });
         thread.start();
+    }
+
+    private boolean hasManufacturerFiles() {
+        String[] files = getFilesDir().list();
+        if (files != null) {
+            for (String it : files) {
+                if (it.endsWith(".obx")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static byte[] get(String address) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
+        c.setRequestMethod("GET");
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        try (InputStream in = c.getInputStream()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            return out.toByteArray();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private void downloadManufacturers() throws Exception {
+        byte[] list = get(BASE + "files.xml");
+        String xml = new String(list, StandardCharsets.UTF_8);
+        Matcher m = Pattern.compile(">\\s*([A-Za-z0-9_\\-]+\\.obx)\\s*<").matcher(xml);
+        while (m.find()) {
+            String name = m.group(1);
+            try {
+                byte[] data = get(BASE + name);
+                try (FileOutputStream w = openFileOutput(name, MODE_PRIVATE)) {
+                    w.write(data);
+                }
+            } catch (Exception e) {
+                Log.e("gurux.dlms", "Failed to download " + name, e);
+            }
+        }
+        try (FileOutputStream w = openFileOutput("files.xml", MODE_PRIVATE)) {
+            w.write(list);
+        }
     }
 }
