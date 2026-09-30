@@ -303,9 +303,9 @@ public class MeterGeneralSettingsFragment extends Fragment {
      * Update interface.
      */
     private void updateInterface() {
-        GXManufacturer man = getManufacturer(mDevice);
-        List<InterfaceType> values = new ArrayList<>(man.getSupporterdInterfaces());
-        if (values.size() > 1) {
+        // Always offer every interface type.
+        List<InterfaceType> values = new ArrayList<>(java.util.Arrays.asList(InterfaceType.values()));
+        {
             GXDLMSUi.showSelection(requireContext(), R.string.interfaceType,
                     mDevice.getInterfaceType(),
                     values, (value, index) ->
@@ -325,7 +325,23 @@ public class MeterGeneralSettingsFragment extends Fragment {
     private void updateAuthentication() {
         GXManufacturer man = getManufacturer(mDevice);
         List<GXAuthentication> values = new ArrayList<>(man.getSettings());
-        if (values.size() > 1) {
+        // Always offer every authentication level.
+        int[] clients = {16, 17, 18, 1, 1, 1, 1, 1, 1};
+        int i = 0;
+        for (Authentication a : Authentication.values()) {
+            boolean found = false;
+            for (GXAuthentication it : values) {
+                if (it.getType() == a) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                values.add(new GXAuthentication(a, i < clients.length ? clients[i] : 1));
+            }
+            ++i;
+        }
+        {
             GXDLMSUi.showSelection(requireContext(), R.string.authentication,
                     mDevice.getAuthentication(),
                     values, (value, index) ->
