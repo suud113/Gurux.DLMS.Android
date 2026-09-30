@@ -27,6 +27,7 @@ import gurux.dlms.android.GXGeneral;
 import gurux.dlms.android.IGXSettingsChangedListener;
 import gurux.dlms.android.R;
 import gurux.dlms.android.databinding.SettingsFragmentBinding;
+import gurux.dlms.enums.Authentication;
 import gurux.dlms.enums.InterfaceType;
 import gurux.dlms.manufacturersettings.GXAuthentication;
 import gurux.dlms.manufacturersettings.GXManufacturer;
@@ -169,18 +170,42 @@ public class MeterGeneralSettingsFragment extends Fragment {
     }
 
     private GXManufacturer getManufacturer(GXDevice device) {
-        for (GXManufacturer it : mManufacturers) {
-            if (it.getIdentification().compareToIgnoreCase(device.getManufacturer()) == 0) {
-                return it;
+        String wanted = device.getManufacturer();
+        if (mManufacturers != null && wanted != null) {
+            for (GXManufacturer it : mManufacturers) {
+                if ((it.getIdentification() != null && it.getIdentification().equalsIgnoreCase(wanted))
+                        || (it.getName() != null && it.getName().equalsIgnoreCase(wanted))) {
+                    return it;
+                }
             }
         }
-        return null;
+        // Fallback: generic manufacturer so settings can always be edited.
+        GXManufacturer man = new GXManufacturer();
+        man.setName("Generic");
+        man.setIdentification("GEN");
+        man.getSupporterdInterfaces().addAll(java.util.Arrays.asList(InterfaceType.values()));
+        man.getSettings().add(new GXAuthentication(Authentication.NONE, 16));
+        man.getSettings().add(new GXAuthentication(Authentication.LOW, 17));
+        man.getSettings().add(new GXAuthentication(Authentication.HIGH, 18));
+        man.getSettings().add(new GXAuthentication(Authentication.HIGH_GMAC, 1));
+        return man;
     }
 
     /**
      * Update manufacturers.
      */
     private void updateManufacturer() {
+        if (mManufacturers == null || mManufacturers.isEmpty()) {
+            // Manufacturer list was not downloaded: use Holley (HLY) directly.
+            mDevice.setManufacturer("HLY");
+            rows.set(0, getManufacturer());
+            ((BaseAdapter) binding.properties.getAdapter()).notifyDataSetChanged();
+            mListener.onDeviceSettingChanged();
+            android.widget.Toast.makeText(getActivity(),
+                    "Manufacturer list is empty. Holley (HLY) selected.",
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
         try {
             List<String> values = new ArrayList<>();
             AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
@@ -190,7 +215,7 @@ public class MeterGeneralSettingsFragment extends Fragment {
             for (GXManufacturer it : mManufacturers) {
                 values.add(it.getName());
                 //Get selected item.
-                if (actual.equals(it.getIdentification())) {
+                if (actual != null && actual.equals(it.getIdentification())) {
                     selected = pos;
                 }
                 ++pos;
